@@ -62,13 +62,15 @@ static EGOCache* __instance;
 #pragma mark -
 
 @implementation EGOCache
-@synthesize defaultTimeoutInterval;
+@synthesize defaultTimeoutInterval, actionQueue, defaultActionInterval, actionTimer;
 
 + (EGOCache*)currentCache {
 	@synchronized(self) {
 		if(!__instance) {
 			__instance = [[EGOCache alloc] init];
 			__instance.defaultTimeoutInterval = 86400;
+            __instance.defaultActionInterval = 7;
+            
 		}
 	}
 	
@@ -98,6 +100,9 @@ static EGOCache* __instance;
 				[[NSFileManager defaultManager] removeItemAtPath:cachePathForKey(key) error:NULL];
 			}
 		}
+        
+        // Create memory-based cache
+        memCache = [[NSCache alloc] init];
 	}
 	
 	return self;
@@ -109,6 +114,8 @@ static EGOCache* __instance;
 	}
 	
 	[self saveCacheDictionary];
+    
+    [memCache removeAllObjects];
 }
 
 - (void)removeCacheForKey:(NSString*)key {
@@ -116,6 +123,8 @@ static EGOCache* __instance;
 
 	[self removeItemFromCache:key];
 	[self saveCacheDictionary];
+    
+    [memCache removeObjectForKey:key];
 }
 
 - (void)removeItemFromCache:(NSString*)key {
@@ -128,10 +137,25 @@ static EGOCache* __instance;
 	
 	[self performDiskWriteOperation:deleteInvocation];
 	[cacheDictionary removeObjectForKey:key];
+    
+    [memCache removeObjectForKey:key];
 }
 
 - (BOOL)hasCacheForKey:(NSString*)key {
+    if ([memCache objectForKey:key] != NULL) return YES;
 	NSDate* date = [cacheDictionary objectForKey:key];
+	if(!date) return NO;
+	if([[[NSDate date] earlierDate:date] isEqualToDate:date]) return NO;
+	return [[NSFileManager defaultManager] fileExistsAtPath:cachePathForKey(key)];
+}
+
+- (BOOL)hasMemCacheForKey:(NSString*)key {
+    if ([memCache objectForKey:key] != NULL) return YES;
+    return NO;
+}
+
+- (BOOL)hasFileCacheForKey:(NSString *)key {
+    NSDate* date = [cacheDictionary objectForKey:key];
 	if(!date) return NO;
 	if([[[NSDate date] earlierDate:date] isEqualToDate:date]) return NO;
 	return [[NSFileManager defaultManager] fileExistsAtPath:cachePathForKey(key)];
@@ -139,6 +163,7 @@ static EGOCache* __instance;
 
 #pragma mark -
 #pragma mark Copy file methods
+// TODO: how to handle these?
 
 - (void)copyFilePath:(NSString*)filePath asKey:(NSString*)key {
 	[self copyFilePath:filePath asKey:key withTimeoutInterval:self.defaultTimeoutInterval];
@@ -169,6 +194,8 @@ static EGOCache* __instance;
 	
 	[self performDiskWriteOperation:writeInvocation];
 	[cacheDictionary setObject:[NSDate dateWithTimeIntervalSinceNow:timeoutInterval] forKey:key];
+    
+    [memCache setObject:data forKey:key];
 	
 	[self performSelectorOnMainThread:@selector(saveAfterDelay) withObject:nil waitUntilDone:YES]; // Need to make sure the save delay get scheduled in the main runloop, not the current threads
 }
@@ -179,7 +206,9 @@ static EGOCache* __instance;
 }
 
 - (NSData*)dataForKey:(NSString*)key {
-	if([self hasCacheForKey:key]) {
+	if ([self hasMemCacheForKey:key]) {
+        return [memCache objectForKey:key];
+    } else if([self hasFileCacheForKey:key]) {
 		return [NSData dataWithContentsOfFile:cachePathForKey(key) options:0 error:NULL];
 	} else {
 		return nil;
@@ -204,6 +233,9 @@ static EGOCache* __instance;
 #pragma mark String methods
 
 - (NSString*)stringForKey:(NSString*)key {
+    if ([memCache objectForKey:key] != NULL) {
+        return [memCache objectForKey:key];
+    }
 	return [[[NSString alloc] initWithData:[self dataForKey:key] encoding:NSUTF8StringEncoding] autorelease];
 }
 
@@ -213,14 +245,19 @@ static EGOCache* __instance;
 
 - (void)setString:(NSString*)aString forKey:(NSString*)key withTimeoutInterval:(NSTimeInterval)timeoutInterval {
 	[self setData:[aString dataUsingEncoding:NSUTF8StringEncoding] forKey:key withTimeoutInterval:timeoutInterval];
+    
+    [memCache setObject:aString forKey:key];
 }
 
 #pragma mark -
-#pragma mark Image methds
+#pragma mark Image methods
 
 #if TARGET_OS_IPHONE
 
 - (UIImage*)imageForKey:(NSString*)key {
+    if ([memCache objectForKey:key] != NULL) {
+        return [memCache objectForKey:key];
+    }
 	return [UIImage imageWithContentsOfFile:cachePathForKey(key)];
 }
 
@@ -230,12 +267,17 @@ static EGOCache* __instance;
 
 - (void)setImage:(UIImage*)anImage forKey:(NSString*)key withTimeoutInterval:(NSTimeInterval)timeoutInterval {
 	[self setData:UIImagePNGRepresentation(anImage) forKey:key withTimeoutInterval:timeoutInterval];
+    
+    [memCache setObject:anImage forKey:key];
 }
 
 
 #else
 
 - (NSImage*)imageForKey:(NSString*)key {
+    if ([memCache objectForKey:key] != NULL) {
+        return [memCache objectForKey:key];
+    }
 	return [[[NSImage alloc] initWithData:[self dataForKey:key]] autorelease];
 }
 
@@ -246,12 +288,18 @@ static EGOCache* __instance;
 - (void)setImage:(NSImage*)anImage forKey:(NSString*)key withTimeoutInterval:(NSTimeInterval)timeoutInterval {
 	[self setData:[[[anImage representations] objectAtIndex:0] representationUsingType:NSPNGFileType properties:nil]
 		   forKey:key withTimeoutInterval:timeoutInterval];
+    
+    [memCache setObject:anImage forKey:key];
 }
 
 #endif
 
 #pragma mark -
 #pragma mark Property List methods
+
+/*
+ Not supporting PLISTs in memory cache
+ */
 
 - (NSData*)plistForKey:(NSString*)key; {  
 	NSData* plistData = [self dataForKey:key];
@@ -276,6 +324,47 @@ static EGOCache* __instance;
 }
 
 #pragma mark -
+#pragma mark Cache Item Actions
+
+- (void)performAction:(void (^)(id object))block withImageForKey:(NSString *)key; {
+    block([self imageForKey:key]);
+}
+
+- (void)performAction:(void (^)(id object))block withImageForKey:(NSString *)key withInterval:(NSTimeInterval)actionInterval; {
+    // Create action block with object requested
+    void (^newAction)(void) = ^{
+        block([self imageForKey:key]);
+    };
+    
+    // Add block to queue
+    [self.actionQueue addObject:newAction];
+    
+    // Set up timer if needed
+    if (self.actionTimer == nil) {
+        self.actionTimer = [NSTimer scheduledTimerWithTimeInterval:self.defaultActionInterval
+                                                            target:self 
+                                                          selector:@selector(takeNextAction) 
+                                                          userInfo:nil
+                                                           repeats:YES];
+    }
+    
+}
+
+- (void)takeNextAction {
+    // Perform action at index 0
+    ((ActionBlock)[self.actionQueue objectAtIndex:0])();
+    // Remove completed action
+    [self.actionQueue removeObjectAtIndex:0];
+    
+    // Check if timer needs to be invalidated
+    if ([self.actionQueue count] == 0) {
+        [self.actionTimer invalidate];
+        [self.actionTimer release];
+        self.actionTimer = nil;
+    }
+}
+
+#pragma mark -
 #pragma mark Disk writing operations
 
 - (void)performDiskWriteOperation:(NSInvocation *)invoction {
@@ -285,10 +374,28 @@ static EGOCache* __instance;
 }
 
 #pragma mark -
+#pragma mark Custom setters
+
+- (NSMutableArray *)actionQueue {
+    if (actionQueue == nil) {
+        
+        actionQueue = [[NSMutableArray alloc] initWithCapacity:1];
+    }
+    return actionQueue;
+}
+
+#pragma mark -
 
 - (void)dealloc {
 	[diskOperationQueue release];
 	[cacheDictionary release];
+    [self.actionQueue release];
+    self.actionQueue = nil;
+    [memCache release];
+    [self.actionTimer invalidate];
+    [self.actionTimer release];
+    self.actionTimer = nil;
+    
 	[super dealloc];
 }
 

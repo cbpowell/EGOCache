@@ -26,13 +26,24 @@
 
 #import <Foundation/Foundation.h>
 
+typedef void (^ActionBlock)(void);
 
 @interface EGOCache : NSObject {
 @private
 	NSMutableDictionary* cacheDictionary;
 	NSOperationQueue* diskOperationQueue;
 	NSTimeInterval defaultTimeoutInterval;
+    
+    NSCache *memCache;
+    NSMutableArray *actionQueue;
+    NSTimeInterval defaultActionInterval;
+    NSTimer *actionTimer;
 }
+
+@property(nonatomic,assign) NSTimeInterval defaultTimeoutInterval; // Default is 1 day
+@property(nonatomic,assign) NSTimeInterval defaultActionInterval; // Default is 7 seconds
+@property(nonatomic,retain) NSMutableArray *actionQueue;
+@property(nonatomic,retain) NSTimer *actionTimer;
 
 + (EGOCache*)currentCache;
 
@@ -63,8 +74,10 @@
 - (void)setPlist:(id)plistObject forKey:(NSString*)key;
 - (void)setPlist:(id)plistObject forKey:(NSString*)key withTimeoutInterval:(NSTimeInterval)timeoutInterval;
 
+- (void)performAction:(void (^)(id object))block withImageForKey:(NSString *)key;
+- (void)performAction:(void (^)(id object))block withImageForKey:(NSString *)key withInterval:(NSTimeInterval)actionInterval;
+
 - (void)copyFilePath:(NSString*)filePath asKey:(NSString*)key;
 - (void)copyFilePath:(NSString*)filePath asKey:(NSString*)key withTimeoutInterval:(NSTimeInterval)timeoutInterval;	
 
-@property(nonatomic,assign) NSTimeInterval defaultTimeoutInterval; // Default is 1 day
 @end
