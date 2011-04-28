@@ -26,7 +26,8 @@
 
 #import <Foundation/Foundation.h>
 
-typedef void (^ActionBlock)(void);
+typedef void (^EGOCacheBlock)(id object);
+typedef void (^VoidBlock)(void);
 
 @interface EGOCache : NSObject {
 @private
@@ -74,8 +75,15 @@ typedef void (^ActionBlock)(void);
 - (void)setPlist:(id)plistObject forKey:(NSString*)key;
 - (void)setPlist:(id)plistObject forKey:(NSString*)key withTimeoutInterval:(NSTimeInterval)timeoutInterval;
 
-- (void)performAction:(void (^)(id object))block withImageForKey:(NSString *)key;
-- (void)performAction:(void (^)(id object))block withImageForKey:(NSString *)key withInterval:(NSTimeInterval)actionInterval;
+- (void)takeNextAction;
+- (void)performAction:(EGOCacheBlock)block withDataForKey:(NSString *)key;
+- (void)performActionOnInterval:(EGOCacheBlock)block withDataForKey:(NSString *)key;
+- (void)performAction:(EGOCacheBlock)block withStringForKey:(NSString *)key;
+- (void)performActionOnInterval:(EGOCacheBlock)block withStringForKey:(NSString *)key;
+- (void)performAction:(EGOCacheBlock)block withImageForKey:(NSString *)key;
+- (void)performActionOnInterval:(EGOCacheBlock)block withImageForKey:(NSString *)key;
+// Plists not handled yet
+
 
 - (void)copyFilePath:(NSString*)filePath asKey:(NSString*)key;
 - (void)copyFilePath:(NSString*)filePath asKey:(NSString*)key withTimeoutInterval:(NSTimeInterval)timeoutInterval;	

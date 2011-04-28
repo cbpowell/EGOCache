@@ -234,8 +234,10 @@ static EGOCache* __instance;
 
 - (NSString*)stringForKey:(NSString*)key {
     if ([memCache objectForKey:key] != NULL) {
+        NSLog(@"returning memCache'd string");
         return [memCache objectForKey:key];
     }
+    NSLog(@"returning disk stored string");
 	return [[[NSString alloc] initWithData:[self dataForKey:key] encoding:NSUTF8StringEncoding] autorelease];
 }
 
@@ -326,18 +328,69 @@ static EGOCache* __instance;
 #pragma mark -
 #pragma mark Cache Item Actions
 
-- (void)performAction:(void (^)(id object))block withImageForKey:(NSString *)key; {
+- (void)performAction:(EGOCacheBlock)block withDataForKey:(NSString *)key; {
+    block([self dataForKey:key]);
+}
+
+- (void)performActionOnInterval:(EGOCacheBlock)block withDataForKey:(NSString *)key; {
+    // Create action block with object requested
+    VoidBlock newBlock = [^{
+        block([self dataForKey:key]);
+    } copy];
+    
+    // Add block to queue
+    [self.actionQueue addObject:newBlock];
+    [newBlock release];
+    
+    // Set up timer if needed
+    if (self.actionTimer == nil) {
+        self.actionTimer = [NSTimer scheduledTimerWithTimeInterval:self.defaultActionInterval
+                                                            target:self 
+                                                          selector:@selector(takeNextAction) 
+                                                          userInfo:nil
+                                                           repeats:YES];
+    }
+    
+}
+
+- (void)performAction:(EGOCacheBlock)block withImageForKey:(NSString *)key; {
     block([self imageForKey:key]);
 }
 
-- (void)performAction:(void (^)(id object))block withImageForKey:(NSString *)key withInterval:(NSTimeInterval)actionInterval; {
+- (void)performActionOnInterval:(EGOCacheBlock)block withImageForKey:(NSString *)key; {
     // Create action block with object requested
-    void (^newAction)(void) = ^{
+    VoidBlock newBlock = [^{
         block([self imageForKey:key]);
-    };
+    } copy];
     
     // Add block to queue
-    [self.actionQueue addObject:newAction];
+    [self.actionQueue addObject:newBlock];
+    [newBlock release];
+    
+    // Set up timer if needed
+    if (self.actionTimer == nil) {
+        self.actionTimer = [NSTimer scheduledTimerWithTimeInterval:self.defaultActionInterval
+                                                            target:self 
+                                                          selector:@selector(takeNextAction) 
+                                                          userInfo:nil
+                                                           repeats:YES];
+    }
+    
+}
+
+- (void)performAction:(EGOCacheBlock)block withStringForKey:(NSString *)key; {
+    block([self stringForKey:key]);
+}
+
+- (void)performActionOnInterval:(EGOCacheBlock)block withStringForKey:(NSString *)key; {
+    // Create action block with object requested
+    VoidBlock newBlock = [^{
+        block([self stringForKey:key]);
+    } copy];
+    
+    // Add block to queue
+    [self.actionQueue addObject:newBlock];
+    [newBlock release];
     
     // Set up timer if needed
     if (self.actionTimer == nil) {
@@ -352,15 +405,16 @@ static EGOCache* __instance;
 
 - (void)takeNextAction {
     // Perform action at index 0
-    ((ActionBlock)[self.actionQueue objectAtIndex:0])();
+    ((VoidBlock)[self.actionQueue objectAtIndex:0])();
+    
     // Remove completed action
     [self.actionQueue removeObjectAtIndex:0];
     
     // Check if timer needs to be invalidated
     if ([self.actionQueue count] == 0) {
         [self.actionTimer invalidate];
-        [self.actionTimer release];
         self.actionTimer = nil;
+        [self.actionTimer release];
     }
 }
 
