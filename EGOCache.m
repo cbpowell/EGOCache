@@ -329,13 +329,17 @@ static EGOCache* __instance;
 #pragma mark Cache Item Actions
 
 - (void)performAction:(EGOCacheBlock)block withDataForKey:(NSString *)key; {
-    block([self dataForKey:key]);
+    if ([self hasCacheForKey:key]) {
+        block([self dataForKey:key]);
+    }
 }
 
 - (void)performActionOnInterval:(EGOCacheBlock)block withDataForKey:(NSString *)key; {
     // Create action block with object requested
     VoidBlock newBlock = [^{
-        block([self dataForKey:key]);
+        if ([self hasCacheForKey:key]) {
+            block([self dataForKey:key]);
+        }
     } copy];
     
     // Add block to queue
@@ -354,13 +358,17 @@ static EGOCache* __instance;
 }
 
 - (void)performAction:(EGOCacheBlock)block withImageForKey:(NSString *)key; {
-    block([self imageForKey:key]);
+    if ([self hasCacheForKey:key]) {
+        block([self imageForKey:key]);
+    }
 }
 
 - (void)performActionOnInterval:(EGOCacheBlock)block withImageForKey:(NSString *)key; {
     // Create action block with object requested
     VoidBlock newBlock = [^{
-        block([self imageForKey:key]);
+        if ([self hasCacheForKey:key]) {
+            block([self imageForKey:key]);
+        }
     } copy];
     
     // Add block to queue
@@ -379,13 +387,17 @@ static EGOCache* __instance;
 }
 
 - (void)performAction:(EGOCacheBlock)block withStringForKey:(NSString *)key; {
-    block([self stringForKey:key]);
+    if ([self hasCacheForKey:key]) {
+        block([self stringForKey:key]);
+    }
 }
 
 - (void)performActionOnInterval:(EGOCacheBlock)block withStringForKey:(NSString *)key; {
     // Create action block with object requested
     VoidBlock newBlock = [^{
-        block([self stringForKey:key]);
+        if ([self hasCacheForKey:key]) {
+            block([self stringForKey:key]);
+        }
     } copy];
     
     // Add block to queue
