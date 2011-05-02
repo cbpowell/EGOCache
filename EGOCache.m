@@ -234,11 +234,15 @@ static EGOCache* __instance;
 
 - (NSString*)stringForKey:(NSString*)key {
     if ([memCache objectForKey:key] != NULL) {
-        NSLog(@"returning memCache'd string");
         return [memCache objectForKey:key];
     }
-    NSLog(@"returning disk stored string");
-	return [[[NSString alloc] initWithData:[self dataForKey:key] encoding:NSUTF8StringEncoding] autorelease];
+	NSString *string = [[[NSString alloc] initWithData:[self dataForKey:key] encoding:NSUTF8StringEncoding] autorelease];
+    
+    if (string != nil) {
+        [memCache setObject:string forKey:key];
+    }
+    
+    return string;
 }
 
 - (void)setString:(NSString*)aString forKey:(NSString*)key {
@@ -260,7 +264,13 @@ static EGOCache* __instance;
     if ([memCache objectForKey:key] != NULL) {
         return [memCache objectForKey:key];
     }
-	return [UIImage imageWithContentsOfFile:cachePathForKey(key)];
+    
+    UIImage *image = [UIImage imageWithContentsOfFile:cachePathForKey(key)];
+    if (image != nil) {
+        [memCache setObject:image forKey:key];
+    }
+    
+    return image;
 }
 
 - (void)setImage:(UIImage*)anImage forKey:(NSString*)key {
@@ -280,7 +290,13 @@ static EGOCache* __instance;
     if ([memCache objectForKey:key] != NULL) {
         return [memCache objectForKey:key];
     }
-	return [[[NSImage alloc] initWithData:[self dataForKey:key]] autorelease];
+	
+    NSImage *image = [[[NSImage alloc] initWithData:[self dataForKey:key]] autorelease];
+    if (image != nil) {
+        [memCache setImage:image forKey:key];
+    }
+    
+    return image;
 }
 
 - (void)setImage:(NSImage*)anImage forKey:(NSString*)key {
